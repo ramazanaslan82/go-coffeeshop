@@ -1,24 +1,45 @@
-version: "3"
-
 services:
   postgres:
     image: postgres:14-alpine
     environment:
-      - POSTGRES_DB=postgres
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=P@ssw0rd
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: P@ssw0rd
+
+      OTEL_SERVICE_NAME: postgres
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317   # DİKKAT: http:// YOK
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: 1.0
+      OTEL_PROPAGATORS: tracecontext,baggage,b3
     healthcheck:
       test: ["CMD", "pg_isready"]
     ports:
       - "5432:5432"
     networks:
       - coffeeshop-network
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://host.docker.internal:3100/loki/api/v1/push"
+        loki-retries: "3"
+        loki-batch-size: "400"
+        loki-external-labels: job=go-coffeeshop,compose_service={{.Name}},service=postgres,site=${SITE_NAME:-local}
 
   rabbitmq:
     image: rabbitmq:3.11-management-alpine
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
+
+      OTEL_SERVICE_NAME: rabbitmq
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317   # DİKKAT: http:// YOK
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: 1.0
+      OTEL_PROPAGATORS: tracecontext,baggage,b3
     healthcheck:
       test: rabbitmq-diagnostics -q ping
       interval: 30s
@@ -29,6 +50,13 @@ services:
       - "15672:15672"
     networks:
       - coffeeshop-network
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://host.docker.internal:3100/loki/api/v1/push"
+        loki-retries: "3"
+        loki-batch-size: "400"
+        loki-external-labels: job=go-coffeeshop,compose_service={{.Name}},service=rabbitmq,site=${SITE_NAME:-local}
   
   proxy:
     build:
@@ -41,6 +69,14 @@ services:
       GRPC_PRODUCT_PORT: 5001
       GRPC_COUNTER_HOST: 'counter'
       GRPC_COUNTER_PORT: 5002
+
+      OTEL_SERVICE_NAME: proxy
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317   # DİKKAT: http:// YOK
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: 1.0
+      OTEL_PROPAGATORS: tracecontext,baggage,b3
     ports:
       - 5000:5000
     depends_on:
@@ -48,6 +84,13 @@ services:
       - counter
     networks:
       - coffeeshop-network
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://host.docker.internal:3100/loki/api/v1/push"
+        loki-retries: "3"
+        loki-batch-size: "400"
+        loki-external-labels: job=go-coffeeshop,compose_service={{.Name}},service=proxy,site=${SITE_NAME:-local}
 
   product:
     build:
@@ -56,10 +99,25 @@ services:
     image: go-coffeeshop-product
     environment:
       APP_NAME: 'product-service in docker'
+
+      OTEL_SERVICE_NAME: product
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317   # DİKKAT: http:// YOK
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: 1.0
+      OTEL_PROPAGATORS: tracecontext,baggage,b3
     ports:
       - "9001:9464"
     networks:
       - coffeeshop-network
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://host.docker.internal:3100/loki/api/v1/push"
+        loki-retries: "3"
+        loki-batch-size: "400"
+        loki-external-labels: job=go-coffeeshop,compose_service={{.Name}},service=product,site=${SITE_NAME:-local}
 
   counter:
     build:
@@ -73,6 +131,14 @@ services:
       PG_DSN_URL: host=postgres user=postgres password=P@ssw0rd dbname=postgres sslmode=disable
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       PRODUCT_CLIENT_URL: product:5001
+
+      OTEL_SERVICE_NAME: counter
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317   # DİKKAT: http:// YOK
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: 1.0
+      OTEL_PROPAGATORS: tracecontext,baggage,b3
     ports:
       - "9002:9464"
     depends_on:
@@ -82,6 +148,13 @@ services:
         condition: service_healthy
     networks:
       - coffeeshop-network
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://host.docker.internal:3100/loki/api/v1/push"
+        loki-retries: "3"
+        loki-batch-size: "400"
+        loki-external-labels: job=go-coffeeshop,compose_service={{.Name}},service=counter,site=${SITE_NAME:-local}
 
   barista:
     build:
@@ -94,6 +167,14 @@ services:
       PG_URL: postgres://postgres:P@ssw0rd@postgres:5432/postgres
       PG_DSN_URL: host=postgres user=postgres password=P@ssw0rd dbname=postgres sslmode=disable
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+
+      OTEL_SERVICE_NAME: barista
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317   # DİKKAT: http:// YOK
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: 1.0
+      OTEL_PROPAGATORS: tracecontext,baggage,b3
     ports:
       - "9004:9464"
     depends_on:
@@ -103,6 +184,13 @@ services:
         condition: service_healthy
     networks:
       - coffeeshop-network
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://host.docker.internal:3100/loki/api/v1/push"
+        loki-retries: "3"
+        loki-batch-size: "400"
+        loki-external-labels: job=go-coffeeshop,compose_service={{.Name}},service=barista,site=${SITE_NAME:-local}
 
   kitchen:
     build:
@@ -115,6 +203,15 @@ services:
       PG_URL: postgres://postgres:P@ssw0rd@postgres:5432/postgres
       PG_DSN_URL: host=postgres user=postgres password=P@ssw0rd dbname=postgres sslmode=disable
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+
+      OTEL_SERVICE_NAME: kitchen
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317   # DİKKAT: http:// YOK
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: 1.0
+      OTEL_PROPAGATORS: tracecontext,baggage,b3
+      
     ports:
       - "9003:9464"
     depends_on:
@@ -124,6 +221,13 @@ services:
         condition: service_healthy
     networks:
       - coffeeshop-network
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://host.docker.internal:3100/loki/api/v1/push"
+        loki-retries: "3"
+        loki-batch-size: "400"
+        loki-external-labels: job=go-coffeeshop,compose_service={{.Name}},service=kitchen,site=${SITE_NAME:-local}
 
   web:
     build:
@@ -133,12 +237,27 @@ services:
     environment:
       REVERSE_PROXY_URL: http://localhost:5000
       WEB_PORT: 8888
+
+      OTEL_SERVICE_NAME: web
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317   # DİKKAT: http:// YOK
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: 1.0
+      OTEL_PROPAGATORS: tracecontext,baggage,b3
     ports:
       - 8888:8888
     depends_on:
       - proxy
     networks:
       - coffeeshop-network
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://host.docker.internal:3100/loki/api/v1/push"
+        loki-retries: "3"
+        loki-batch-size: "400"
+        loki-external-labels: job=go-coffeeshop,compose_service={{.Name}},service=web,site=${SITE_NAME:-local}
 
 networks:
   coffeeshop-network:
