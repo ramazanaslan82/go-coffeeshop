@@ -7,18 +7,23 @@ RUN go mod download
 
 # Step 2: Builder
 FROM golang:1.22-alpine as builder
+ARG TARGETOS
+ARG TARGETARCH
 COPY --from=modules /go/pkg /go/pkg
 COPY . /app
 WORKDIR /app
 COPY --from=modules /modules/go.sum /app/go.sum
 RUN apk add --no-cache git && go mod tidy
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -tags migrate -o /bin/app ./cmd/kitchen
 
 # Step 3: Final
 FROM scratch
 
 ENV USER=app
+ENV GLOG_logtostderr=1
+
+EXPOSE 9464
 
 # GOPATH for scratch images is /
 COPY --from=builder /app/cmd/kitchen/config.yml /

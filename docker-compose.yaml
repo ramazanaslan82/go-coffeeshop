@@ -57,7 +57,7 @@ services:
     environment:
       APP_NAME: 'product-service in docker'
     ports:
-      - 5001:5001
+      - "9001:9464"
     networks:
       - coffeeshop-network
 
@@ -74,7 +74,7 @@ services:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       PRODUCT_CLIENT_URL: product:5001
     ports:
-      - 5002:5002
+      - "9002:9464"
     depends_on:
       postgres:
         condition: service_healthy
@@ -94,6 +94,8 @@ services:
       PG_URL: postgres://postgres:P@ssw0rd@postgres:5432/postgres
       PG_DSN_URL: host=postgres user=postgres password=P@ssw0rd dbname=postgres sslmode=disable
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    ports:
+      - "9004:9464"
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,6 +115,8 @@ services:
       PG_URL: postgres://postgres:P@ssw0rd@postgres:5432/postgres
       PG_DSN_URL: host=postgres user=postgres password=P@ssw0rd dbname=postgres sslmode=disable
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    ports:
+      - "9003:9464"
     depends_on:
       postgres:
         condition: service_healthy

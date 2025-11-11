@@ -5,12 +5,13 @@ package app
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang/glog"
+	"golang.org/x/exp/slog"
 
 	// migrate tools
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -26,7 +27,8 @@ const (
 func init() {
 	databaseURL, ok := os.LookupEnv("PG_URL")
 	if !ok || len(databaseURL) == 0 {
-		glog.Fatalf("migrate: environment variable not declared: PG_URL")
+		slog.Error("migrate: environment variable not declared: PG_URL", fmt.Errorf("PG_URL not set"))
+		os.Exit(2)
 	}
 
 	databaseURL += "?sslmode=disable"
@@ -38,35 +40,46 @@ func init() {
 	)
 
 	for attempts > 0 {
-		cur, _ := os.Getwd()
-		dir := filepath.Dir(cur + "/../../..")
+		// Prefer absolute path in containers; fallback to repo-relative path for local runs
+		sourceURL := "file:///db/migrations"
+		if inDocker := os.Getenv("IN_DOCKER"); inDocker != "" {
+			if dockered, _ := strconv.ParseBool(inDocker); !dockered {
+				cur, _ := os.Getwd()
+				sourceURL = fmt.Sprintf("file://%s/%s", filepath.Dir(cur+"/../../.."), _migrationFilePath)
+			}
+		} else {
+			cur, _ := os.Getwd()
+			sourceURL = fmt.Sprintf("file://%s/%s", filepath.Dir(cur+"/../../.."), _migrationFilePath)
+		}
 
-		glog.Infoln(fmt.Sprintf("file://%s", dir))
+		slog.Info("migration source", "url", sourceURL)
 
-		m, err = migrate.New(fmt.Sprintf("file://%s/%s", dir, _migrationFilePath), databaseURL)
+		m, err = migrate.New(sourceURL, databaseURL)
 		if err == nil {
 			break
 		}
 
-		glog.Infoln("Migrate: postgres is trying to connect, attempts left: %d", attempts)
+		slog.Info("Migrate: postgres is trying to connect", "attempts_left", attempts)
 		time.Sleep(_defaultTimeout)
 		attempts--
 	}
 
 	if err != nil {
-		glog.Fatalf("Migrate: postgres connect error: %s", err)
+		slog.Error("Migrate: postgres connect error", err)
+		os.Exit(2)
 	}
 
 	err = m.Up()
 	defer m.Close()
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		glog.Fatalf("Migrate: up error: %s", err)
+		slog.Error("Migrate: up error", err)
+		os.Exit(2)
 	}
 
 	if errors.Is(err, migrate.ErrNoChange) {
-		glog.Infoln("Migrate: no change")
+		slog.Info("Migrate: no change")
 		return
 	}
 
-	glog.Infoln("Migrate: up success")
+	slog.Info("Migrate: up success")
 }

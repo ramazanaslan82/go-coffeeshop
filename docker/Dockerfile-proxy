@@ -7,12 +7,14 @@ RUN go mod download
 
 # Step 2: Builder
 FROM golang:1.22-alpine as builder
+ARG TARGETOS
+ARG TARGETARCH
 COPY --from=modules /go/pkg /go/pkg
 COPY . /app
 WORKDIR /app
 COPY --from=modules /modules/go.sum /app/go.sum
 RUN apk add --no-cache git && go mod tidy
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -tags migrate -o /bin/app ./cmd/proxy
 
 # Step 3: Final

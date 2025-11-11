@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang/glog"
+	"golang.org/x/exp/slog"
 
 	// migrate tools
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -30,7 +30,8 @@ var (
 func init() {
 	databaseURL, ok := os.LookupEnv("PG_URL")
 	if !ok || len(databaseURL) == 0 {
-		glog.Fatalf("migrate: environment variable not declared: PG_URL")
+		slog.Error("migrate: environment variable not declared: PG_URL", fmt.Errorf("PG_URL not set"))
+		os.Exit(2)
 	}
 
 	databaseURL += "?sslmode=disable"
@@ -42,42 +43,41 @@ func init() {
 	)
 
 	for attempts > 0 {
-		inDocker, ok := os.LookupEnv("IN_DOCKER")
-		if !ok || len(inDocker) == 0 {
-			glog.Fatalf("migrate: environment variable not declared: IN_DOCKER")
-		}
+		inDocker, _ := os.LookupEnv("IN_DOCKER")
 
-		dir := fmt.Sprintf("file://%s", _migrationFilePath)
-		if dockered, _ := strconv.ParseBool(inDocker); !dockered {
+		dir := "file:///db/migrations"
+		if dockered, _ := strconv.ParseBool(inDocker); inDocker != "" && !dockered {
 			cur, _ := os.Getwd()
 			dir = fmt.Sprintf("file://%s/%s", filepath.Dir(cur+"/../../.."), _migrationFilePath)
 		}
 
-		glog.Infoln(dir)
+		slog.Info("migration source", "url", dir)
 		m, err = migrate.New(dir, databaseURL)
 		if err == nil {
 			break
 		}
 
-		glog.Infoln("Migrate: postgres is trying to connect, attempts left: %d", attempts)
+		slog.Info("Migrate: postgres is trying to connect", "attempts_left", attempts)
 		time.Sleep(_defaultTimeout)
 		attempts--
 	}
 
 	if err != nil {
-		glog.Fatalf("Migrate: postgres connect error: %s", err)
+		slog.Error("Migrate: postgres connect error", err)
+		os.Exit(2)
 	}
 
 	err = m.Up()
 	defer m.Close()
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		glog.Fatalf("Migrate: up error: %s", err)
+		slog.Error("Migrate: up error", err)
+		os.Exit(2)
 	}
 
 	if errors.Is(err, migrate.ErrNoChange) {
-		glog.Infoln("Migrate: no change")
+		slog.Info("Migrate: no change")
 		return
 	}
 
-	glog.Infoln("Migrate: up success")
+	slog.Info("Migrate: up success")
 }
