@@ -18,6 +18,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 # Step 3: Final
 FROM scratch
 
+ENV USER=app
+
 EXPOSE 5002
 
 # GOPATH for scratch images is /
