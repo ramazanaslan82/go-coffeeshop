@@ -6,6 +6,9 @@ import (
 	"time"
 
 	"golang.org/x/exp/slog"
+
+	"github.com/XSAM/otelsql"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const (
@@ -34,7 +37,14 @@ func NewPostgresDB(url DBConnString) (DBEngine, error) {
 
 	var err error
 	for pg.connAttempts > 0 {
-		pg.db, err = sql.Open("postgres", string(url))
+		pg.db, err = otelsql.Open(
+			"postgres",
+			string(url),
+			otelsql.WithAttributes(
+				attribute.String("db.system", "postgresql"),
+			),
+			otelsql.WithSQLCommenter(true),
+		)
 		if err != nil {
 			break
 		}

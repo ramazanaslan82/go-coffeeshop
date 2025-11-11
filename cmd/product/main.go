@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net"
 	"os"
 	"os/signal"
@@ -12,9 +13,12 @@ import (
 	"github.com/thangchung/go-coffeeshop/cmd/product/config"
 	"github.com/thangchung/go-coffeeshop/internal/product/app"
 	"github.com/thangchung/go-coffeeshop/pkg/logger"
+	otelx "github.com/thangchung/go-coffeeshop/pkg/otel"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/exp/slog"
 	"google.golang.org/grpc"
+
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 )
 
 func main() {
@@ -41,7 +45,38 @@ func main() {
 	// integrate Logrus with the slog logger
 	slog.New(logger.NewLogrusHandler(logrus.StandardLogger()))
 
-	server := grpc.NewServer()
+	// OpenTelemetry init
+	shutdown, metricsHandler, err := otelx.Setup(ctx, cfg.Name, cfg.Version)
+	if err != nil {
+		slog.Error("failed to init OpenTelemetry", err)
+	}
+	defer func() {
+		_ = shutdown(context.Background())
+	}()
+
+	// Metrics endpoint
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", metricsHandler)
+	metricsPort := os.Getenv("METRICS_PORT")
+	if metricsPort == "" {
+		metricsPort = "9464"
+	}
+	metricsServer := &http.Server{
+		Addr:    fmt.Sprintf(":%s", metricsPort),
+		Handler: metricsMux,
+	}
+	go func() {
+		<-ctx.Done()
+		_ = metricsServer.Shutdown(context.Background())
+	}()
+	go func() {
+		_ = metricsServer.ListenAndServe()
+	}()
+
+	server := grpc.NewServer(
+		grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
+		grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
+	)
 
 	go func() {
 		defer server.GracefulStop()

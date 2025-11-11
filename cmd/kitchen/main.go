@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,6 +12,7 @@ import (
 	"github.com/thangchung/go-coffeeshop/cmd/kitchen/config"
 	"github.com/thangchung/go-coffeeshop/internal/kitchen/app"
 	"github.com/thangchung/go-coffeeshop/pkg/logger"
+	otelx "github.com/thangchung/go-coffeeshop/pkg/otel"
 	"github.com/thangchung/go-coffeeshop/pkg/postgres"
 	"github.com/thangchung/go-coffeeshop/pkg/rabbitmq"
 	"go.uber.org/automaxprocs/maxprocs"
@@ -45,6 +47,34 @@ func main() {
 
 	// integrate Logrus with the slog logger
 	slog.New(logger.NewLogrusHandler(logrus.StandardLogger()))
+
+	// OpenTelemetry init
+	shutdown, metricsHandler, err := otelx.Setup(ctx, cfg.Name, cfg.Version)
+	if err != nil {
+		slog.Error("failed to init OpenTelemetry", err)
+	}
+	defer func() {
+		_ = shutdown(context.Background())
+	}()
+
+	// Metrics endpoint
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", metricsHandler)
+	metricsPort := os.Getenv("METRICS_PORT")
+	if metricsPort == "" {
+		metricsPort = "9464"
+	}
+	metricsServer := &http.Server{
+		Addr:    fmt.Sprintf(":%s", metricsPort),
+		Handler: metricsMux,
+	}
+	go func() {
+		<-ctx.Done()
+		_ = metricsServer.Shutdown(context.Background())
+	}()
+	go func() {
+		_ = metricsServer.ListenAndServe()
+	}()
 
 	a, cleanup, err := app.InitApp(cfg, postgres.DBConnString(cfg.PG.DsnURL), rabbitmq.RabbitMQConnStr(cfg.RabbitMQ.URL))
 	if err != nil {

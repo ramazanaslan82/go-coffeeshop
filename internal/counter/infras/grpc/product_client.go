@@ -14,6 +14,8 @@ import (
 	gen "github.com/thangchung/go-coffeeshop/proto/gen"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 )
 
 type productGRPCClient struct {
@@ -25,7 +27,12 @@ var _ domain.ProductDomainService = (*productGRPCClient)(nil)
 var ProductGRPCClientSet = wire.NewSet(NewGRPCProductClient)
 
 func NewGRPCProductClient(cfg *config.Config) (domain.ProductDomainService, error) {
-	conn, err := grpc.Dial(cfg.ProductClient.URL, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial(
+		cfg.ProductClient.URL,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()),
+		grpc.WithStreamInterceptor(otelgrpc.StreamClientInterceptor()),
+	)
 	if err != nil {
 		return nil, err
 	}

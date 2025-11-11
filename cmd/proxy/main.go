@@ -13,10 +13,14 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/thangchung/go-coffeeshop/cmd/proxy/config"
 	"github.com/thangchung/go-coffeeshop/pkg/logger"
+	otelx "github.com/thangchung/go-coffeeshop/pkg/otel"
 	gen "github.com/thangchung/go-coffeeshop/proto/gen"
 	"golang.org/x/exp/slog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 func newGateway(
@@ -28,7 +32,11 @@ func newGateway(
 	counterEndpoint := fmt.Sprintf("%s:%d", cfg.CounterHost, cfg.CounterPort)
 
 	mux := gwruntime.NewServeMux(opts...)
-	dialOpts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	dialOpts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()),
+		grpc.WithStreamInterceptor(otelgrpc.StreamClientInterceptor()),
+	}
 
 	err := gen.RegisterProductServiceHandlerFromEndpoint(ctx, mux, productEndpoint, dialOpts)
 	if err != nil {
@@ -96,6 +104,15 @@ func main() {
 	// integrate Logrus with the slog logger
 	slog.New(logger.NewLogrusHandler(logrus.StandardLogger()))
 
+	// OpenTelemetry init
+	shutdown, metricsHandler, err := otelx.Setup(ctx, cfg.Name, cfg.Version)
+	if err != nil {
+		slog.Error("failed to init OpenTelemetry", err)
+	}
+	defer func() {
+		_ = shutdown(context.Background())
+	}()
+
 	mux := http.NewServeMux()
 
 	gw, err := newGateway(ctx, cfg, nil)
@@ -104,10 +121,11 @@ func main() {
 	}
 
 	mux.Handle("/", gw)
+	mux.Handle("/metrics", metricsHandler)
 
 	s := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-		Handler: allowCORS(withLogger(mux)),
+		Handler: otelhttp.NewHandler(allowCORS(withLogger(mux)), "http.proxy"),
 	}
 
 	go func() {
